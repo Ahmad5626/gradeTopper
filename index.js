@@ -43,8 +43,8 @@ const userSchema=new mongoose.Schema({
         type: String,
         required: true
     },
+    meeting:[],
     
-   
     date: {
         type: Date,
         default: Date.now    
@@ -523,6 +523,9 @@ const meetingSchema=new mongoose.Schema({
     teacherId:{
         type:String
     },
+    courseEmailId:{
+        type:String
+    }
 
 })
 
@@ -561,77 +564,87 @@ const ZOOM_API_URL = "https://api.zoom.us/v2/users/me/meetings";
 
 
 app.post('/create-meeting', async (req, res) => {
-  const { topic, startTime, duration , teacherId,id } = req.body;
-
-  try {
-    // Ensure we have an access token
-    if (!accessToken) {
-      await generateAccessToken();
-    }
-
-    const response = await axios.post(
-      ZOOM_API_URL,
-      {
-        topic,
-        type: 2, // Scheduled meeting
-        start_time: startTime,
-        duration: parseInt(duration), // In minutes
-       
-        settings: {
-          host_video: true,
-          participant_video: true,
-        },
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
+    const { topic, startTime, duration, teacherId, id,courserEmail } = req.body;
+  console.log(req.body);
+  
+    try {
+      // Ensure we have an access token
+      if (!accessToken) {
+        await generateAccessToken();
       }
-    );
-//    const id= localStorage.getItem('id')
-    const teacher=await Tutor.findById({_id:req.body.id})
-//    const findteacher= teacher.map((teacher)=>{
-//         return teacher._id
-//     })
-    console.log(teacher._id);
+  
+      const response = await axios.post(
+        ZOOM_API_URL,
+        {
+          topic,
+          type: 2, // Scheduled meeting
+          start_time: startTime,
+          duration: parseInt(duration), // In minutes
+          settings: {
+            host_video: true,
+            participant_video: true,
+          },
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+  
+      const teacher = await Tutor.findById({ _id: id });
+      const users = await User.findOne({email:courserEmail});
     
-    const meeting=new ZoomData({
+      
+  
+      // Create new meeting entry
+      const meeting = new ZoomData({
         topic,
-         startTime,
-          duration,
-          meetingLink:req.body.meetingLink,
-          teacherId:teacher._id
-    })
+        startTime,
+        duration,
+        teacherId: teacher._id,
+        meetingLink: response.data.join_url,
+      });
+  
+      const savemeetingdata = await meeting.save();
+  
+      res.json({
+        success: true,
+        join_url: response.data.join_url,
+        start_url: response.data.start_url,
+        savemeetingdata,
+      });
 
-    const savemeetingdata=await meeting.save()
-
-    res.json({
-        success:true,
-      join_url: response.data.join_url,
-      start_url: response.data.start_url,
-      
-      
-      savemeetingdata
-    });
-
-    if(meeting.teacherId == teacher._id){
-      teacher.meeting.push(savemeetingdata);
-      await teacher.save();
+         // Add meeting to teacher's meeting array
+         if (meeting.teacherId == teacher._id) {
+            teacher.meeting.push(savemeetingdata);
+            await teacher.save();
+          }
+  
+      // Add meeting to teacher's meeting array
+      if(users){
+        users.meeting.push(savemeetingdata);
+      await users.save();
+      }else{
+        console.log("User not found");
+        
+      }
+  
+     
+    } catch (error) {
+      console.error('Error creating meeting:', error.response?.data || error.message);
+  
+      // Regenerate the access token if expired
+      if (error.response?.status === 401) {
+        await generateAccessToken();
+        return res.status(401).send('Access token expired. Please retry.');
+      }
+  
+      res.status(500).send('Error creating meeting');
     }
-  }
-   catch (error) {
-    console.error('Error creating meeting:', error.response?.data || error.message);
-
-    // Regenerate the access token if expired
-    if (error.response?.status === 401) {
-      await generateAccessToken();
-      return res.status(401).send('Access token expired. Please retry.');
-    }
-
-    res.status(500).send('Error creating meeting');
-  }
-});
+  });
+  
 
 // get meeting data
 app.get('/getzoommeeting',async (req,res)=>{
@@ -643,10 +656,6 @@ app.get('/getzoommeeting',async (req,res)=>{
     }
    
 })
-
 app.listen(4100,()=>{
     console.log("server started");
 })
-
-
-
