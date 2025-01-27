@@ -1,7 +1,7 @@
 const express=require("express");
 const app=express();
 const mongoose=require("mongoose");
-const bcrypt=require("bcrypt");
+const bcrypt = require('bcryptjs');
 const cors=require("cors");
 const bodyParser = require('body-parser');
 const axios = require('axios');
